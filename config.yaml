@@ -1,0 +1,131 @@
+# ============================================
+# Dashboard Configuration
+# ============================================
+# All settings for the new tab dashboard.
+# Mount this file as a Docker volume so changes
+# don't require rebuilding the image.
+# ============================================
+
+dashboard:
+  # Page title shown in the browser tab
+  title: "home"
+  # Clock format: 12 or 24
+  clock_format: 24
+
+weather:
+  # Display name for the weather location
+  location_name: "Los Angeles, CA"
+  # Get your coordinates from https://www.latlong.net/
+  latitude: 34.0522
+  longitude: -118.2437
+  # Temperature units: "fahrenheit" or "celsius"
+  units: "fahrenheit"
+
+services:
+  miniflux:
+    # Internal Docker hostname — used by the backend proxy
+    internal_url: "http://miniflux:8080"
+    # Generate at: Miniflux → Settings → API Keys → Create a new API key
+    api_key: "YOUR_MINIFLUX_API_KEY"
+
+  nextflux:
+    # External Cloudflare Tunnel URL — used for browser links only
+    external_url: "https://rss.squidball.xyz"
+
+  nextcloud:
+    # Internal Docker hostname for CalDAV
+    internal_url: "http://nextcloud:80"
+    # Your Nextcloud username
+    username: "russell"
+    # Generate at: Nextcloud → Settings → Security → App passwords
+    # Do NOT use your main account password
+    app_password: "YOUR_NEXTCLOUD_APP_PASSWORD"
+    # List specific calendar names to show, or leave empty to show all
+    # Example: ["Personal", "Work"]
+    calendars: []
+
+  immich:
+    # Internal Docker hostname — Immich has no Cloudflare Tunnel
+    # All requests MUST go through the backend proxy
+    internal_url: "http://immich-server:2283"
+    # Generate at: Immich → User Settings → API Keys
+    # NOTE: Must be from an ADMIN account for /api/server/statistics
+    api_key: "YOUR_IMMICH_API_KEY"
+
+  glances:
+    # Internal Docker hostname for Glances REST API (v4)
+    internal_url: "http://glances:61208"
+
+  open_webui:
+    # Internal Docker hostname
+    internal_url: "http://open-webui:8080"
+    # External Cloudflare Tunnel URL — used for browser links
+    external_url: "https://llm.squidball.xyz"
+    # URL parameter for pre-filling a prompt (Open WebUI supports "q")
+    # Leave empty string if unsupported
+    query_param: "q"
+
+  stirling:
+    # Internal Docker hostname
+    internal_url: "http://stirling-pdf:8080"
+    # External Cloudflare Tunnel URL — used for browser links
+    external_url: "https://pdf.squidball.xyz"
+
+  super_productivity:
+    # WebDAV server where Super Productivity syncs its data
+    internal_webdav_url: "http://sp-webdav:6060"
+    # WebDAV authentication credentials
+    webdav_username: "YOUR_SP_WEBDAV_USERNAME"
+    webdav_password: "YOUR_SP_WEBDAV_PASSWORD"
+    # The sync data file name (usually "sync-data.json")
+    data_file: "sync-data.json"
+    # External Cloudflare Tunnel URL — used for browser links
+    external_url: "https://tasks.squidball.xyz"
+
+  homepage:
+    # Internal Docker hostname
+    internal_url: "http://homepage:3000"
+
+  notesnook:
+    # Internal Docker hostname
+    internal_url: "http://notesnook-web:80"
+
+# ============================================
+# Bookmarks
+# ============================================
+# Each bookmark needs: name, url
+# Optional: icon (emoji or favicon URL)
+# If no icon is provided, tries [url]/favicon.ico,
+# then falls back to the first letter of the name
+bookmarks:
+  - name: "Miniflux"
+    url: "https://rss.squidball.xyz"
+    icon: "📰"
+  - name: "Nextcloud"
+    url: "https://cloud.squidball.xyz"
+    icon: "☁️"
+  - name: "Tasks"
+    url: "https://tasks.squidball.xyz"
+    icon: "✅"
+  - name: "Notes"
+    url: "https://notes.squidball.xyz"
+    icon: "📝"
+  - name: "Stirling"
+    url: "https://pdf.squidball.xyz"
+    icon: "📄"
+  - name: "Local AI"
+    url: "https://llm.squidball.xyz"
+    icon: "🤖"
+
+# ============================================
+# Keyboard Shortcuts
+# ============================================
+# Single key shortcuts (no modifier keys)
+# These only fire when no input field is focused
+keyboard_shortcuts:
+  # Focus the AI launcher search bar
+  focus_ai_launcher: "l"
+  # Open services in a new tab
+  open_miniflux: "r"
+  open_nextcloud: "c"
+  open_tasks: "t"

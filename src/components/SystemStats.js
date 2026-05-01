@@ -1,0 +1,135 @@
+'use client';
+
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { formatBytes } from '@/lib/utils';
+import { IconCpu, IconActivity, IconHardDrive, IconArrowUpRight, IconArrowDownRight, IconClock, IconThermometer } from '@/lib/icons';
+
+export default function SystemStats() {
+  const [data, setData] = useState(null);
+  const [history, setHistory] = useState({ cpu: [], mem: [] });
+  const [error, setError] = useState(null);
+  const mountedRef = useRef(true);
+
+  const fetchAll = useCallback(async () => {
+    try {
+      const endpoints = ['cpu', 'mem', 'fs', 'sensors', 'network', 'load', 'uptime'];
+      const responses = await Promise.all(endpoints.map(ep => fetch(`/api/glances/${ep}`)));
+      const [cpu, mem, fs, sensors, network, load, uptime] = await Promise.all(responses.map(r => r.json()));
+      
+      if (!mountedRef.current) return;
+      
+      // Check for errors in primary data
+      if (cpu.error && mem.error) {
+        throw new Error(cpu.detail || mem.detail || 'Glances unavailable');
+      }
+
+      setData({ cpu, mem, fs, sensors, network, load, uptime });
+      setHistory(prev => ({
+        cpu: [...prev.cpu.slice(-59), cpu.total || 0],
+        mem: [...prev.mem.slice(-59), mem.percent || 0]
+      }));
+      setError(null);
+    } catch (e) {
+      if (mountedRef.current) setError(e.message);
+    }
+  }, []);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    fetchAll();
+    const t = setInterval(fetchAll, 5000);
+    return () => { mountedRef.current = false; clearInterval(t); };
+  }, [fetchAll]);
+
+  if (error && !data) return <div className="panel"><div className="p-label"><IconCpu size={12}/> System</div><div className="p-empty">Unavailable</div></div>;
+  if (!data) return <div className="panel"><div className="p-label"><IconCpu size={12}/> System</div><div className="p-empty">Loading…</div></div>;
+
+  const disk = Array.isArray(data.fs) ? (data.fs.find(d => d.mnt_point === '/') || data.fs[0]) : null;
+  const temp = Array.isArray(data.sensors) ? data.sensors.find(s =>
+    s.label?.toLowerCase().includes('cpu') || s.label?.toLowerCase().includes('core') ||
+    s.label?.toLowerCase().includes('package') || s.type === 'temperature_core'
+  ) : null;
+
+  // Find primary network interface (highest total traffic)
+  const primaryNet = Array.isArray(data.network) 
+    ? [...data.network].sort((a, b) => (b.rx + b.tx) - (a.rx + a.tx))[0]
+    : null;
+
+  // Format uptime (e.g., "3d 12h")
+  const formatUptime = (seconds) => {
+    if (!seconds) return '—';
+    const d = Math.floor(seconds / 86400);
+    const h = Math.floor((seconds % 86400) / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    if (d > 0) return `${d}d ${h}h`;
+    return `${h}h ${m}m`;
+  };
+
+  const rows = [
+    { label: 'CPU', pct: data.cpu?.total || 0, cls: 'bar-cpu', spark: history.cpu },
+    { label: 'RAM', pct: data.mem?.percent || 0, cls: 'bar-ram', detail: `${formatBytes(data.mem?.used || 0)} / ${formatBytes(data.mem?.total || 0)}` },
+  ];
+  if (disk) rows.push({ label: 'Disk', pct: disk.percent || 0, cls: 'bar-disk', detail: `${formatBytes(disk.used || 0)} / ${formatBytes(disk.size || 0)}` });
+
+  return (
+    <div className="panel panel-system">
+      <div className="p-head">
+        <span className="p-label"><IconActivity size={12}/> mike-trout</span>
+        <div className="sys-meta">
+          {data.uptime && <span title="Uptime"><IconClock size={10}/> {formatUptime(data.uptime)}</span>}
+          {temp && <span title="CPU Temp"><IconThermometer size={10}/> {Math.round(temp.value)}°C</span>}
+        </div>
+      </div>
+      
+      {/* Bars */}
+      <div className="sys-bars">
+        {rows.map(r => (
+          <div key={r.label} className="sys-row">
+            <span className="sys-label">{r.label}</span>
+            <div className="sys-bar"><div className={`sys-fill ${r.cls}`} style={{ width: `${r.pct}%` }} /></div>
+            <span className="sys-pct">{Math.round(r.pct)}%</span>
+          </div>
+        ))}
+      </div>
+
+      {history.cpu.length > 2 && <Spark data={history.cpu} />}
+
+      {/* Extended Info Footer */}
+      <div className="sys-footer">
+        {data.load && (
+          <div className="sys-stat-box">
+            <span className="sys-stat-title">Load Avg</span>
+            <span className="sys-stat-val">{data.load.min1?.toFixed(2) || '0.00'} · {data.load.min5?.toFixed(2) || '0.00'}</span>
+          </div>
+        )}
+        {primaryNet && (
+          <div className="sys-stat-box">
+            <span className="sys-stat-title">Network ({primaryNet.interface_name})</span>
+            <span className="sys-stat-val">
+              <IconArrowDownRight size={9} className="net-down" /> {formatBytes(primaryNet.rx)}/s
+              {' '}
+              <IconArrowUpRight size={9} className="net-up" /> {formatBytes(primaryNet.tx)}/s
+            </span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Spark({ data }) {
+  const W = 180, H = 24, P = 1;
+  const mn = Math.min(...data) * 0.9, mx = Math.max(...data) * 1.1 || 100;
+  const pts = data.map((v, i) => {
+    const x = P + (i / (data.length - 1)) * (W - 2 * P);
+    const y = H - P - ((v - mn) / (mx - mn)) * (H - 2 * P);
+    return `${x},${y}`;
+  }).join(' ');
+  const area = `${P},${H} ${pts} ${P + ((data.length - 1) / (data.length - 1)) * (W - 2 * P)},${H}`;
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="spark">
+      <polygon points={area} fill="var(--accent)" opacity="0.08" />
+      <polyline points={pts} fill="none" stroke="var(--accent)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" opacity="0.5" />
+    </svg>
+  );
+}

@@ -1,0 +1,39 @@
+services:
+  # ============================================
+  # Dashboard — frontend + backend proxy
+  # ============================================
+  dashboard:
+    build: .
+    container_name: dashboard
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    volumes:
+      # Mount config so edits don't require rebuild
+      - ./config.yaml:/app/config.yaml:ro
+    networks:
+      - proxy-nw
+
+  # ============================================
+  # Glances — system monitoring REST API
+  # Provides CPU, RAM, disk, and sensor data
+  # ============================================
+  glances:
+    image: nicolargo/glances:latest
+    container_name: glances
+    restart: unless-stopped
+    pid: host
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /etc/os-release:/etc/os-release:ro
+    environment:
+      - GLANCES_OPT=-w
+    ports:
+      - "61208:61208"
+    networks:
+      - proxy-nw
+
+networks:
+  # External network shared with all other Docker services
+  proxy-nw:
+    external: true
