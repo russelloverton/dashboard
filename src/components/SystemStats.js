@@ -18,7 +18,6 @@ export default function SystemStats() {
       
       if (!mountedRef.current) return;
       
-      // Check for errors in primary data
       if (cpu.error && mem.error) {
         throw new Error(cpu.detail || mem.detail || 'Glances unavailable');
       }
@@ -50,19 +49,28 @@ export default function SystemStats() {
     s.label?.toLowerCase().includes('package') || s.type === 'temperature_core'
   ) : null;
 
-  // Find primary network interface (highest total traffic)
-  const primaryNet = Array.isArray(data.network) 
-    ? [...data.network].sort((a, b) => (b.rx + b.tx) - (a.rx + a.tx))[0]
+  // Find primary network interface — exclude loopback, pick highest traffic
+  const primaryNet = Array.isArray(data.network)
+    ? [...data.network]
+        .filter(n => n.interface_name !== 'lo')
+        .sort((a, b) => (b.bytes_all_rate_per_sec || 0) - (a.bytes_all_rate_per_sec || 0))[0]
     : null;
 
-  // Format uptime (e.g., "3d 12h")
-  const formatUptime = (seconds) => {
-    if (!seconds) return '—';
-    const d = Math.floor(seconds / 86400);
-    const h = Math.floor((seconds % 86400) / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    if (d > 0) return `${d}d ${h}h`;
-    return `${h}h ${m}m`;
+  // Parse uptime — Glances returns a string like "2 days, 18:52:29"
+  const formatUptime = (uptime) => {
+    if (!uptime) return '—';
+    if (typeof uptime === 'number') {
+      const d = Math.floor(uptime / 86400);
+      const h = Math.floor((uptime % 86400) / 3600);
+      const m = Math.floor((uptime % 3600) / 60);
+      return d > 0 ? `${d}d ${h}h` : `${h}h ${m}m`;
+    }
+    const dayMatch = uptime.match(/(\d+)\s+day/);
+    const timeMatch = uptime.match(/(\d+):(\d+):\d+/);
+    const d = dayMatch ? parseInt(dayMatch[1]) : 0;
+    const h = timeMatch ? parseInt(timeMatch[1]) : 0;
+    const m = timeMatch ? parseInt(timeMatch[2]) : 0;
+    return d > 0 ? `${d}d ${h}h` : `${h}h ${m}m`;
   };
 
   const rows = [
@@ -81,7 +89,6 @@ export default function SystemStats() {
         </div>
       </div>
       
-      {/* Bars */}
       <div className="sys-bars">
         {rows.map(r => (
           <div key={r.label} className="sys-row">
@@ -94,7 +101,6 @@ export default function SystemStats() {
 
       {history.cpu.length > 2 && <Spark data={history.cpu} />}
 
-      {/* Extended Info Footer */}
       <div className="sys-footer">
         {data.load && (
           <div className="sys-stat-box">
@@ -106,9 +112,9 @@ export default function SystemStats() {
           <div className="sys-stat-box">
             <span className="sys-stat-title">Network ({primaryNet.interface_name})</span>
             <span className="sys-stat-val">
-              <IconArrowDownRight size={9} className="net-down" /> {formatBytes(primaryNet.rx)}/s
+              <IconArrowDownRight size={9} className="net-down" /> {formatBytes(primaryNet.bytes_recv_rate_per_sec || 0)}/s
               {' '}
-              <IconArrowUpRight size={9} className="net-up" /> {formatBytes(primaryNet.tx)}/s
+              <IconArrowUpRight size={9} className="net-up" /> {formatBytes(primaryNet.bytes_sent_rate_per_sec || 0)}/s
             </span>
           </div>
         )}
