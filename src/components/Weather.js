@@ -9,6 +9,7 @@ import { weatherCodeToText, formatTemp } from '@/lib/utils';
 export default function Weather() {
   const config = useConfig();
   const [tab, setTab] = useState('today');
+  const [selectedDay, setSelectedDay] = useState(null);
   const [location, setLocation] = useState(null); // { name, lat, lon }
   const [isEditingLoc, setIsEditingLoc] = useState(false);
   const searchRef = useRef(null);
@@ -64,7 +65,7 @@ export default function Weather() {
   }
 
   const current = data?.current;
-  const hourly = data?.hourly;
+  const minutely_15 = data?.minutely_15;
   const daily = data?.daily;
   const displayName = location?.name || config?.weather?.location_name || 'Set Location';
 
@@ -100,32 +101,50 @@ export default function Weather() {
 
       {/* Tab switcher */}
       <div className="wh-tabs">
-        <button className={`wh-tab ${tab === 'today' ? 'on' : ''}`} onClick={() => setTab('today')}>Today</button>
-        <button className={`wh-tab ${tab === 'week' ? 'on' : ''}`} onClick={() => setTab('week')}>This week</button>
+        <button className={`wh-tab ${tab === 'today' && !selectedDay ? 'on' : ''}`} onClick={() => { setTab('today'); setSelectedDay(null); }}>Today</button>
+        <button className={`wh-tab ${tab === 'week' || selectedDay ? 'on' : ''}`} onClick={() => { setTab('week'); setSelectedDay(null); }}>This week</button>
       </div>
 
       {/* Tab content */}
       {tab === 'today'
-        ? <TodayChart hourly={hourly} unit={unit} format24={format24} />
-        : <WeekList daily={daily} unit={unit} />
+        ? <TodayChart minutely_15={minutely_15} selectedDay={selectedDay} unit={unit} format24={format24} />
+        : <WeekList daily={daily} unit={unit} onSelectDay={(d) => { setSelectedDay(d); setTab('today'); }} />
       }
     </div>
   );
 }
 
 /* ── Today: dual-axis line chart (temp line + precip bars) ── */
-function TodayChart({ hourly, unit, format24 }) {
+function TodayChart({ minutely_15, selectedDay, unit, format24 }) {
+  const [hoverIndex, setHoverIndex] = useState(null);
+
   const chartData = useMemo(() => {
-    if (!hourly?.time) return null;
+    if (!minutely_15?.time) return null;
     const now = new Date();
-    const start = hourly.time.findIndex(t => new Date(t) >= now);
-    const end = Math.min(start + 18, hourly.time.length);
+    let start, end;
+    
+    if (selectedDay) {
+      // Find start of selected day
+      const targetDate = new Date(selectedDay);
+      targetDate.setHours(0, 0, 0, 0);
+      start = minutely_15.time.findIndex(t => new Date(t) >= targetDate);
+      if (start === -1) start = 0;
+      end = Math.min(start + 96, minutely_15.time.length); // 24 hours * 4
+    } else {
+      // Live 'today' view
+      start = minutely_15.time.findIndex(t => new Date(t) >= now);
+      if (start === -1) start = 0;
+      if (start >= 2) start -= 2; // start 30 minutes before now
+      else if (start === 1) start -= 1;
+      end = Math.min(start + 72, minutely_15.time.length); // 18 hours * 4
+    }
+
     return {
-      times: hourly.time.slice(start, end),
-      temps: hourly.temperature_2m.slice(start, end),
-      precips: hourly.precipitation_probability.slice(start, end),
+      times: minutely_15.time.slice(start, end),
+      temps: minutely_15.temperature_2m.slice(start, end),
+      precips: minutely_15.precipitation_probability.slice(start, end),
     };
-  }, [hourly]);
+  }, [minutely_15, selectedDay]);
 
   if (!chartData || chartData.temps.length < 3) return null;
 
@@ -142,28 +161,56 @@ function TodayChart({ hourly, unit, format24 }) {
   const xOf = (i) => PAD.l + (i / (temps.length - 1)) * plotW;
   const yOf = (t) => PAD.t + (1 - (t - tMin) / tRange) * plotH;
 
-  // Smooth curve via monotone cubic interpolation points
-  const lineD = temps.map((t, i) => {
-    const x = xOf(i);
-    const y = yOf(t);
-    return i === 0 ? `M${x},${y}` : `L${x},${y}`;
-  }).join(' ');
-
-  // Area fill
-  const areaD = `${lineD} L${xOf(temps.length - 1)},${PAD.t + plotH} L${xOf(0)},${PAD.t + plotH} Z`;
-
-  // Time labels (show every 3rd)
-  const fmtHr = (iso) => {
-    const d = new Date(iso);
-    if (format24) return `${d.getHours().toString().padStart(2, '0')}:00`;
-    const h = d.getHours();
-    const h12 = h % 12 || 12;
-    return `${h12}${h >= 12 ? 'p' : 'a'}`;
+  // Catmull-Rom to Bezier for perfectly smooth curves
+  const getSpline = (points) => {
+    if (points.length < 2) return '';
+    let d = `M${points[0].x},${points[0].y}`;
+    const tension = 0.15; // smoothness factor
+    for (let i = 0; i < points.length - 1; i++) {
+      const p0 = points[i === 0 ? i : i - 1];
+      const p1 = points[i];
+      const p2 = points[i + 1];
+      const p3 = points[i + 2 < points.length ? i + 2 : i + 1];
+      const cp1x = p1.x + (p2.x - p0.x) * tension;
+      const cp1y = p1.y + (p2.y - p0.y) * tension;
+      const cp2x = p2.x - (p3.x - p1.x) * tension;
+      const cp2y = p2.y - (p3.y - p1.y) * tension;
+      d += ` C${cp1x},${cp1y} ${cp2x},${cp2y} ${p2.x},${p2.y}`;
+    }
+    return d;
   };
 
+  const pts = temps.map((t, i) => ({ x: xOf(i), y: yOf(t) }));
+  const lineD = getSpline(pts);
+  const areaD = `${lineD} L${xOf(temps.length - 1)},${PAD.t + plotH} L${xOf(0)},${PAD.t + plotH} Z`;
+
+  // Time formatting (Forced 12-hour format for chart readability)
+  const fmtTime = (iso, includeMin) => {
+    const d = new Date(iso);
+    const m = d.getMinutes().toString().padStart(2, '0');
+    const h = d.getHours();
+    const h12 = h % 12 || 12;
+    return `${h12}${includeMin ? `:${m}` : ''}${h >= 12 ? 'p' : 'a'}`;
+  };
+
+  // Calculate Y-axis grid lines (multiples of 10, fallback to 5)
+  let gridTemps = [];
+  let step = 10;
+  let startGrid = Math.ceil(tMin / step) * step;
+  for (let t = startGrid; t <= tMax; t += step) {
+    gridTemps.push(t);
+  }
+  if (gridTemps.length === 0) {
+    step = 5;
+    startGrid = Math.ceil(tMin / step) * step;
+    for (let t = startGrid; t <= tMax; t += step) {
+      gridTemps.push(t);
+    }
+  }
+
   return (
-    <div className="wh-chart">
-      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet" className="wh-svg">
+    <div className="wh-chart" style={{ position: 'relative' }}>
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet" className="wh-svg" onMouseLeave={() => setHoverIndex(null)}>
         <defs>
           <linearGradient id="areaFill" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="var(--chart-line)" stopOpacity="0.18" />
@@ -171,52 +218,79 @@ function TodayChart({ hourly, unit, format24 }) {
           </linearGradient>
         </defs>
 
-        {/* Horizontal grid lines */}
-        {[0.25, 0.5, 0.75].map(f => (
-          <line key={f} x1={PAD.l} x2={W - PAD.r} y1={PAD.t + f * plotH} y2={PAD.t + f * plotH} stroke="var(--grid-line)" strokeWidth="0.5" />
-        ))}
+        {/* Horizontal grid lines with Y-axis labels */}
+        {gridTemps.map(gt => {
+          const y = yOf(gt);
+          return (
+            <g key={gt}>
+              <line x1={PAD.l} x2={W - PAD.r - 20} y1={y} y2={y} stroke="var(--text-3)" strokeWidth="1" strokeDasharray="3 3" opacity="0.6" />
+              <text x={W - PAD.r} y={y + 3} textAnchor="end" className="chart-time" fill="var(--text-3)">{gt}°</text>
+            </g>
+          );
+        })}
 
         {/* Precip bars */}
         {precips.map((p, i) => {
           if (p <= 0) return null;
           const x = xOf(i);
           const barH = (p / 100) * plotH * 0.35;
-          const bw = plotW / temps.length * 0.55;
-          return <rect key={i} x={x - bw / 2} y={PAD.t + plotH - barH} width={bw} height={barH} rx="1.5" fill="var(--chart-precip)" opacity="0.55" />;
+          const bw = (plotW / temps.length) * 0.8;
+          return <rect key={i} x={x - bw / 2} y={PAD.t + plotH - barH} width={bw} height={barH} rx="1" fill="var(--chart-precip)" opacity="0.4" />;
         })}
 
-        {/* Area + line */}
+        {/* Area + smooth line */}
         <path d={areaD} fill="url(#areaFill)" />
-        <path d={lineD} fill="none" stroke="var(--chart-line)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        <path d={lineD} fill="none" stroke="var(--chart-line)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
 
-        {/* Data points + labels every 3rd */}
+        {/* X-Axis Time Labels - Show every 8th point (every 2 hours) */}
         {temps.map((t, i) => {
-          const x = xOf(i);
-          const y = yOf(t);
-          const show = i % 3 === 0;
-          return show && (
-            <g key={i}>
-              <circle cx={x} cy={y} r="2.5" fill="var(--chart-line)" />
-              <text x={x} y={y - 8} textAnchor="middle" className="chart-label">{Math.round(t)}°</text>
-              <text x={x} y={H - 4} textAnchor="middle" className="chart-time">{fmtHr(times[i])}</text>
-            </g>
-          );
+          if (i % 8 !== 0) return null;
+          return <text key={i} x={xOf(i)} y={H - 4} textAnchor="middle" className="chart-time">{fmtTime(times[i], false)}</text>;
         })}
 
-        {/* Precip labels where significant */}
-        {precips.map((p, i) => {
-          if (p < 10 || i % 3 !== 0) return null;
-          const x = xOf(i);
-          const barH = (p / 100) * plotH * 0.35;
-          return <text key={`p${i}`} x={x} y={PAD.t + plotH - barH - 4} textAnchor="middle" className="chart-precip-label">{p}%</text>;
-        })}
+        {/* Hover Crosshair */}
+        {hoverIndex !== null && (
+          <g>
+            <line x1={xOf(hoverIndex)} x2={xOf(hoverIndex)} y1={PAD.t} y2={PAD.t + plotH} stroke="var(--text-3)" strokeWidth="1" strokeDasharray="3 3" />
+            <circle cx={xOf(hoverIndex)} cy={yOf(temps[hoverIndex])} r="3.5" fill="var(--bg-color)" stroke="var(--chart-line)" strokeWidth="2" />
+          </g>
+        )}
+
+        {/* Invisible Hit Zones */}
+        {temps.map((t, i) => (
+          <rect 
+            key={`hit-${i}`} 
+            x={xOf(i) - (plotW / temps.length) / 2} 
+            y={0} 
+            width={plotW / temps.length} 
+            height={H} 
+            fill="transparent" 
+            onMouseEnter={() => setHoverIndex(i)}
+            style={{ cursor: 'crosshair' }}
+          />
+        ))}
       </svg>
+      
+      {/* HTML Tooltip Overlay */}
+      {hoverIndex !== null && (
+        <div 
+          className="wh-tooltip" 
+          style={{ 
+            left: `${(xOf(hoverIndex) / W) * 100}%`, 
+            top: `${(yOf(temps[hoverIndex]) / H) * 100}%` 
+          }}
+        >
+          <div className="wht-time">{fmtTime(times[hoverIndex], true)}</div>
+          <div className="wht-temp">{Math.round(temps[hoverIndex])}°</div>
+          {precips[hoverIndex] > 0 && <div className="wht-precip"><IconDroplet size={10} /> {precips[hoverIndex]}%</div>}
+        </div>
+      )}
     </div>
   );
 }
 
 /* ── Week: compact list with temp range bars ── */
-function WeekList({ daily, unit }) {
+function WeekList({ daily, unit, onSelectDay }) {
   if (!daily?.time) return null;
   const days = daily.time.slice(0, 7);
   const allMin = Math.min(...(daily.temperature_2m_min || []));
@@ -234,7 +308,7 @@ function WeekList({ daily, unit }) {
         const left = ((lo - allMin) / range) * 100;
         const width = Math.max(((hi - lo) / range) * 100, 3);
         return (
-          <div key={d} className={`wk-row${isToday ? ' wk-today' : ''}`}>
+          <div key={d} className={`wk-row${isToday ? ' wk-today' : ''}`} onClick={() => onSelectDay(d)} style={{ cursor: 'pointer' }}>
             <span className="wk-day">{isToday ? 'Today' : dt.toLocaleDateString('en-US', { weekday: 'short' })}</span>
             <WeatherIcon code={daily.weather_code?.[i]} size={14} className="wk-icon" />
             <span className="wk-lo">{formatTemp(lo, unit)}</span>

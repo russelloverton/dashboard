@@ -54,11 +54,12 @@ export async function GET(request) {
       `&current=${currentParams}` +
       `&hourly=${hourlyParams}` +
       `&daily=${dailyParams}` +
+      `&minutely_15=temperature_2m,precipitation_probability` +
       `&temperature_unit=${tempUnit}` +
       `&wind_speed_unit=${windUnit}` +
       `&precipitation_unit=${precipUnit}` +
       `&timezone=auto` +
-      `&forecast_days=6`;
+      `&forecast_days=7`;
 
     const res = await fetch(url, { next: { revalidate: 0 } });
     if (!res.ok) {

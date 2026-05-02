@@ -139,6 +139,12 @@ a{color:inherit;text-decoration:none}
 .chart-time{font-size:9px;fill:var(--text-3);font-family:Inter,sans-serif}
 .chart-precip-label{font-size:8px;fill:var(--chart-precip);font-family:Inter,sans-serif;font-weight:500}
 
+/* Weather chart tooltip */
+.wh-tooltip{position:absolute;transform:translate(-50%, -120%);background:var(--bg-color);border:1px solid var(--border);border-radius:6px;padding:6px 10px;display:flex;flex-direction:column;align-items:center;gap:2px;box-shadow:0 4px 12px rgba(0,0,0,0.15);pointer-events:none;z-index:10;min-width:60px;}
+.wht-time{font-size:.65rem;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:.03em;}
+.wht-temp{font-size:1.1rem;font-weight:700;color:var(--text-1);letter-spacing:-.02em;}
+.wht-precip{display:flex;align-items:center;gap:3px;font-size:.65rem;color:var(--chart-precip);font-weight:600;margin-top:1px;}
+
 /* Weather week */
 .wh-week{display:flex;flex-direction:column;gap:4px;padding-top:8px}
 .wk-row{display:flex;align-items:center;gap:10px;padding:6px 10px;border-radius:6px;font-size:.8rem}
