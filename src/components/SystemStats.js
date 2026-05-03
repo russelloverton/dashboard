@@ -12,9 +12,9 @@ export default function SystemStats() {
 
   const fetchAll = useCallback(async () => {
     try {
-      const endpoints = ['cpu', 'mem', 'fs', 'sensors', 'network', 'load', 'uptime', 'gpu'];
+      const endpoints = ['cpu', 'mem', 'fs', 'sensors', 'network', 'load', 'uptime', 'gpu', 'diskio'];
       const responses = await Promise.all(endpoints.map(ep => fetch(`/api/glances/${ep}`)));
-      const [cpu, mem, fs, sensors, network, load, uptime, gpu] = await Promise.all(responses.map(r => r.json()));
+      const [cpu, mem, fs, sensors, network, load, uptime, gpu, diskio] = await Promise.all(responses.map(r => r.json()));
       
       if (!mountedRef.current) return;
       
@@ -22,7 +22,7 @@ export default function SystemStats() {
         throw new Error(cpu.detail || mem.detail || 'Glances unavailable');
       }
 
-      setData({ cpu, mem, fs, sensors, network, load, uptime, gpu });
+      setData({ cpu, mem, fs, sensors, network, load, uptime, gpu, diskio });
       setHistory(prev => ({
         cpu: [...prev.cpu.slice(-59), cpu.total || 0],
         mem: [...prev.mem.slice(-59), mem.percent || 0]
@@ -56,17 +56,23 @@ export default function SystemStats() {
         .sort((a, b) => (b.bytes_all_rate_per_sec || 0) - (a.bytes_all_rate_per_sec || 0))[0]
     : null;
 
+  // Aggregate total Disk I/O across all physical drives (ignoring loop devices)
+  let ioRead = 0;
+  let ioWrite = 0;
+  if (Array.isArray(data.diskio)) {
+    data.diskio.forEach(d => {
+      if (!d.disk_name?.startsWith('loop')) {
+        ioRead += (d.read_bytes_rate_per_sec || 0);
+        ioWrite += (d.write_bytes_rate_per_sec || 0);
+      }
+    });
+  }
+
   // Parse uptime — Glances returns a string like "2 days, 18:52:29"
   const formatUptime = (uptime) => {
-    if (!uptime) return '—';
-    if (typeof uptime === 'number') {
-      const d = Math.floor(uptime / 86400);
-      const h = Math.floor((uptime % 86400) / 3600);
-      const m = Math.floor((uptime % 3600) / 60);
-      return d > 0 ? `${d}d ${h}h` : `${h}h ${m}m`;
-    }
-    const dayMatch = uptime.match(/(\d+)\s+day/);
-    const timeMatch = uptime.match(/(\d+):(\d+):\d+/);
+    if (!uptime) return '';
+    const dayMatch = uptime.match(/(\d+) days?/);
+    const timeMatch = uptime.match(/(\d+):(\d+):(\d+)/);
     const d = dayMatch ? parseInt(dayMatch[1]) : 0;
     const h = timeMatch ? parseInt(timeMatch[1]) : 0;
     const m = timeMatch ? parseInt(timeMatch[2]) : 0;
@@ -75,19 +81,18 @@ export default function SystemStats() {
 
   const rows = [
     { label: 'CPU', pct: data.cpu?.total || 0, cls: 'bar-cpu', spark: history.cpu },
-    { label: 'RAM', pct: data.mem?.percent || 0, cls: 'bar-ram', detail: `${formatBytes(data.mem?.used || 0)} / ${formatBytes(data.mem?.total || 0)}` },
+    { label: 'RAM', pct: data.mem?.percent || 0, cls: 'bar-ram', detail: `${formatBytes(data.mem?.used || 0)}/${formatBytes(data.mem?.total || 0)}` },
   ];
   
   if (Array.isArray(data.gpu) && data.gpu.length > 0) {
     data.gpu.forEach((g, i) => {
-      // Different GPU plugins use different keys, but generally `proc` or `gpu_id` 
       if (g.proc !== undefined) {
         rows.push({ label: `GPU${data.gpu.length > 1 ? i : ''}`, pct: g.proc, cls: 'bar-gpu' });
       }
     });
   }
 
-  if (disk) rows.push({ label: 'Disk', pct: disk.percent || 0, cls: 'bar-disk', detail: `${formatBytes(disk.used || 0)} / ${formatBytes(disk.size || 0)}` });
+  if (disk) rows.push({ label: 'Disk', pct: disk.percent || 0, cls: 'bar-disk', detail: `${formatBytes(disk.used || 0)}/${formatBytes(disk.size || 0)}` });
 
   return (
     <div className="panel panel-system">
@@ -104,7 +109,10 @@ export default function SystemStats() {
           <div key={r.label} className="sys-row">
             <span className="sys-label">{r.label}</span>
             <div className="sys-bar"><div className={`sys-fill ${r.cls}`} style={{ width: `${r.pct}%` }} /></div>
-            <span className="sys-pct">{Math.round(r.pct)}%</span>
+            <span className="sys-pct-group" style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'flex-end', width: r.detail ? '90px' : '32px' }}>
+              {r.detail && <span style={{ fontSize: '0.6rem', color: 'var(--text-3)', whiteSpace: 'nowrap' }}>{r.detail}</span>}
+              <span className="sys-pct">{Math.round(r.pct)}%</span>
+            </span>
           </div>
         ))}
       </div>
@@ -118,9 +126,19 @@ export default function SystemStats() {
             <span className="sys-stat-val">{data.load.min1?.toFixed(2) || '0.00'} · {data.load.min5?.toFixed(2) || '0.00'}</span>
           </div>
         )}
-        {primaryNet && (
+        {(ioRead > 0 || ioWrite > 0) && (
           <div className="sys-stat-box">
-            <span className="sys-stat-title">Network ({primaryNet.interface_name})</span>
+            <span className="sys-stat-title">Disk I/O</span>
+            <span className="sys-stat-val">
+              <IconArrowDownRight size={9} className="net-down" /> {formatBytes(ioRead)}/s
+              {' '}
+              <IconArrowUpRight size={9} className="net-up" /> {formatBytes(ioWrite)}/s
+            </span>
+          </div>
+        )}
+        {primaryNet && (
+          <div className="sys-stat-box" style={{ marginLeft: 'auto' }}>
+            <span className="sys-stat-title">Net ({primaryNet.interface_name})</span>
             <span className="sys-stat-val">
               <IconArrowDownRight size={9} className="net-down" /> {formatBytes(primaryNet.bytes_recv_rate_per_sec || 0)}/s
               {' '}
