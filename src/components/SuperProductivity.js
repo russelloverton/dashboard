@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useMemo } from 'react';
 import { usePolling } from '@/hooks/usePolling';
 import { useConfig } from '@/hooks/useConfig';
 import { IconCheck, IconPlay, IconCircle, IconArrowUpRight, IconPlus } from '@/lib/icons';
@@ -25,24 +25,28 @@ export default function SuperProductivity() {
 
   const [newTask, setNewTask] = useState('');
   const [creating, setCreating] = useState(false);
-  const [togglingIds, setTogglingIds] = useState(new Set());
+  const [writeError, setWriteError] = useState(null);
+  // optimistic overrides: id → isDone value while the server request is in-flight
+  const [optimistic, setOptimistic] = useState({});
   const [showDone, setShowDone] = useState(false);
   const [filterProject, setFilterProject] = useState(null); // null = show all
   const inputRef = useRef(null);
 
   const toggleTask = useCallback(async (id, currentDone) => {
-    setTogglingIds(prev => new Set(prev).add(id));
+    const next = !currentDone;
+    setOptimistic(prev => ({ ...prev, [id]: next }));
+    setWriteError(null);
     try {
-      await fetch('/api/tasks', {
+      const res = await fetch('/api/tasks', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, isDone: !currentDone }),
+        body: JSON.stringify({ id, isDone: next }),
       });
+      if (!res.ok) throw new Error(`${res.status}`);
       refetch();
     } catch (e) {
-      console.error('Failed to toggle task', e);
-    } finally {
-      setTogglingIds(prev => { const s = new Set(prev); s.delete(id); return s; });
+      setOptimistic(prev => { const s = { ...prev }; delete s[id]; return s; });
+      setWriteError('Save failed — check SP connection');
     }
   }, [refetch]);
 
@@ -51,25 +55,30 @@ export default function SuperProductivity() {
     const raw = newTask.trim();
     if (!raw) return;
     setCreating(true);
+    setWriteError(null);
     try {
-      await fetch('/api/tasks', {
+      const res = await fetch('/api/tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ raw }),
       });
+      if (!res.ok) throw new Error(`${res.status}`);
       setNewTask('');
       refetch();
     } catch (e) {
-      console.error('Failed to create task', e);
+      setWriteError('Could not add task — check SP connection');
     } finally {
       setCreating(false);
     }
   }, [newTask, refetch]);
 
+  const allTasks = useMemo(() => (data?.tasks || []).map(t =>
+    t.id in optimistic ? { ...t, isDone: optimistic[t.id] } : t
+  ), [data, optimistic]);
+
   if (loading && !data) return <div className="panel"><div className="p-label">Tasks</div><div className="p-empty">Loading…</div></div>;
   if (error && !data) return <div className="panel"><a href={spUrl} target="_blank" rel="noopener noreferrer" className="p-label p-link">Tasks <IconArrowUpRight size={10} /></a><div className="p-empty">Unavailable</div></div>;
 
-  const allTasks = data?.tasks || [];
   const projects = data?.projects || [];
   const undone = allTasks.filter(t => !t.isDone);
   const done = allTasks.filter(t => t.isDone);
@@ -80,8 +89,7 @@ export default function SuperProductivity() {
     filtered = filtered.filter(t => t.projectId === filterProject);
   }
 
-  // Limit visible tasks to keep the widget compact (no page scrolling)
-  const MAX_VISIBLE = 12;
+  const MAX_VISIBLE = 7;
   const overflow = filtered.length > MAX_VISIBLE;
   const visibleTasks = filtered.slice(0, MAX_VISIBLE);
 
@@ -119,21 +127,22 @@ export default function SuperProductivity() {
         </div>
       )}
 
+      {writeError && <div className="tk-write-error">{writeError}</div>}
       <div className="tasks-scroll">
         {visibleTasks.length === 0 && <div className="p-empty">All clear ✨</div>}
         {visibleTasks.map(t => {
           const due = formatDueDate(t.plannedAt);
-          const toggling = togglingIds.has(t.id);
+          const pending = t.id in optimistic;
           return (
             <div key={t.id} className={`tk${t.inProgress ? ' tk-active' : ''}${t.isDone ? ' tk-done' : ''}`}>
               <button
                 className={`tk-icon${t.isDone ? ' tk-icon-done' : ''}`}
                 onClick={() => toggleTask(t.id, t.isDone)}
-                disabled={toggling}
+                disabled={pending}
                 title={t.isDone ? 'Mark undone' : 'Mark done'}
                 style={{ cursor: 'pointer', border: 'none' }}
               >
-                {toggling
+                {pending
                   ? <span className="tk-spinner" />
                   : t.isDone ? <IconCheck size={10} />
                   : t.inProgress ? <IconPlay size={8} />

@@ -56,6 +56,10 @@ async function fetchSPData(url, headers) {
 }
 
 async function writeSPData(url, headers, spData) {
+  // Update lastChange so SP treats this file as the authoritative state on next sync
+  spData.lastChange = Date.now();
+  if (spData.state) spData.state.lastChange = Date.now();
+
   const jsonText = JSON.stringify(spData);
   const compressed = gzipSync(Buffer.from(jsonText, 'utf8'));
   const b64 = compressed.toString('base64');
