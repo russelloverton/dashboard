@@ -81,8 +81,7 @@ export async function GET() {
  */
 function extractTasks(data) {
   try {
-    // SP might store task data at different paths depending on version
-    const taskData = data?.task || data?.tasks;
+    const taskData = data?.state?.task || data?.task || data?.tasks;
     if (!taskData) {
       return [];
     }
