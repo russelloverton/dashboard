@@ -106,13 +106,11 @@ export default function SystemStats() {
       
       <div className="sys-bars">
         {rows.map(r => (
-          <div key={r.label} className="sys-row">
-            <span className="sys-label">{r.label}</span>
-            <div className="sys-bar" style={{ position: 'relative' }}>
-              <div className={`sys-fill ${r.cls}`} style={{ width: `${r.pct}%` }} />
-              {r.detail && <span style={{ position: 'absolute', right: '6px', top: '50%', transform: 'translateY(-50%)', fontSize: '0.55rem', color: 'var(--text-3)', fontWeight: 500 }}>{r.detail}</span>}
-            </div>
-            <span className="sys-pct">{Math.round(r.pct)}%</span>
+          <div key={r.label} className="sys-row" style={{ display: 'grid', gridTemplateColumns: '32px 1fr auto 32px', gap: '10px', alignItems: 'center', width: '100%' }}>
+            <span className="sys-label" style={{ width: 'auto' }}>{r.label}</span>
+            <div className="sys-bar"><div className={`sys-fill ${r.cls}`} style={{ width: `${r.pct}%` }} /></div>
+            <span style={{ fontSize: '0.6rem', color: 'var(--text-3)', textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{r.detail || ''}</span>
+            <span className="sys-pct" style={{ width: 'auto' }}>{Math.round(r.pct)}%</span>
           </div>
         ))}
       </div>

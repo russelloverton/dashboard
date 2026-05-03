@@ -198,7 +198,7 @@ a{color:inherit;text-decoration:none}
 .sys-bars{display:flex;flex-direction:column;gap:6px;}
 .sys-row{display:flex;align-items:center;gap:10px;}
 .sys-label{font-size:.7rem;font-weight:500;color:var(--text-3);width:32px;flex-shrink:0}
-.sys-bar{flex:1;height:4px;border-radius:2px;background:var(--bar-track);overflow:hidden}
+.sys-bar{flex:1;height:4px;border-radius:2px;background:var(--bar-track)}
 .sys-fill{height:100%;border-radius:2px;transition:width .5s}
 .bar-cpu{background:linear-gradient(90deg,var(--accent),var(--accent-2))}
 .bar-ram{background:linear-gradient(90deg,var(--accent-2),#f472b6)}
