@@ -42,7 +42,8 @@ export async function GET() {
     let jsonText;
     // SP prefixes compressed data with "pf_C2__" before the gzip bytes
     if (buffer.slice(0, 7).toString() === 'pf_C2__') {
-      const compressed = buffer.slice(7);
+      const b64 = buffer.slice(7).toString('utf8');
+      const compressed = Buffer.from(b64, 'base64');
       jsonText = gunzipSync(compressed).toString('utf8');
     } else {
       jsonText = buffer.toString('utf8');
