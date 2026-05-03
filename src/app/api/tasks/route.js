@@ -52,15 +52,29 @@ async function fetchSPData(url, headers) {
     jsonText = buffer.toString('utf8');
   }
 
-  return JSON.parse(jsonText);
+  const data = JSON.parse(jsonText);
+  return { data, originalSize: jsonText.length };
 }
 
-async function writeSPData(url, headers, spData) {
-  // Update lastChange so SP treats this file as the authoritative state on next sync
-  spData.lastChange = Date.now();
-  if (spData.state) spData.state.lastChange = Date.now();
+async function writeSPData(url, headers, spData, originalSize) {
+  // SP's sync protocol: lastModified determines which side wins (higher = authoritative).
+  // vectorClock tracks per-client change counts; increment our slot so SP pulls this state.
+  spData.lastModified = Date.now();
+  if (spData.vectorClock && spData.clientId) {
+    spData.vectorClock[spData.clientId] = (spData.vectorClock[spData.clientId] || 0) + 1;
+  }
 
   const jsonText = JSON.stringify(spData);
+
+  // Safety: refuse to write if the serialised output is less than 70% of what we read.
+  // A shrinking round-trip means data was silently dropped — better to surface an error
+  // than to corrupt the file.
+  if (originalSize && jsonText.length < originalSize * 0.7) {
+    throw new Error(
+      `Write aborted: serialised data shrank from ${originalSize} to ${jsonText.length} chars — possible data loss`
+    );
+  }
+
   const compressed = gzipSync(Buffer.from(jsonText, 'utf8'));
   const b64 = compressed.toString('base64');
   const body = 'pf_C2__' + b64;
@@ -312,7 +326,7 @@ export async function GET() {
       );
     }
 
-    const spData = await fetchSPData(sp.url, sp.headers);
+    const { data: spData } = await fetchSPData(sp.url, sp.headers);
     const { map: projectMap, list: projects } = extractProjects(spData);
     const tasks = extractTasks(spData, projectMap);
     return NextResponse.json({ tasks, projects });
@@ -334,7 +348,7 @@ export async function PATCH(request) {
     const { id, isDone } = await request.json();
     if (!id) return NextResponse.json({ error: 'Missing task id' }, { status: 400 });
 
-    const spData = await fetchSPData(sp.url, sp.headers);
+    const { data: spData, originalSize } = await fetchSPData(sp.url, sp.headers);
     const taskData = spData?.state?.task || spData?.task || spData?.tasks;
     if (!taskData?.entities?.[id]) {
       return NextResponse.json({ error: 'Task not found' }, { status: 404 });
@@ -347,7 +361,7 @@ export async function PATCH(request) {
       taskData.entities[id].doneOn = null;
     }
 
-    await writeSPData(sp.url, sp.headers, spData);
+    await writeSPData(sp.url, sp.headers, spData, originalSize);
     return NextResponse.json({ ok: true });
   } catch (err) {
     return NextResponse.json(
@@ -369,7 +383,7 @@ export async function POST(request) {
 
     const { title, projectName, tags, timeEstimateMs, plannedAt } = parseShortSyntax(raw);
 
-    const spData = await fetchSPData(sp.url, sp.headers);
+    const { data: spData, originalSize } = await fetchSPData(sp.url, sp.headers);
     const taskData = spData?.state?.task || spData?.task || spData?.tasks;
     if (!taskData) {
       return NextResponse.json({ error: 'Cannot locate task store' }, { status: 500 });
@@ -443,7 +457,7 @@ export async function POST(request) {
       projectData.entities[resolvedProjectId].taskIds.push(newId);
     }
 
-    await writeSPData(sp.url, sp.headers, spData);
+    await writeSPData(sp.url, sp.headers, spData, originalSize);
     return NextResponse.json({ ok: true, id: newId, parsed: { title, projectName, tags, timeEstimateMs, plannedAt } });
   } catch (err) {
     return NextResponse.json(
