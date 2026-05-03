@@ -109,7 +109,7 @@ export default function SystemStats() {
         ))}
       </div>
 
-      {history.cpu.length > 2 && <Spark data={history.cpu} />}
+      <Spark data={history.cpu} />
 
       <div className="sys-footer">
         {data.load && (
@@ -139,14 +139,14 @@ function Spark({ data }) {
   
   // Ensure we have exactly 60 data points (or whatever the array length is)
   const len = Math.max(data.length, 2);
-  const pts = data.map((v, i) => {
+  const pts = data.length > 0 ? data.map((v, i) => {
     const x = P + (i / (len - 1)) * (W - 2 * P);
     const y = H - P - ((v - mn) / (mx - mn)) * (H - 2 * P);
     return `${x},${y}`;
-  }).join(' ');
+  }).join(' ') : "";
   
-  const lastX = P + ((data.length - 1) / (len - 1)) * (W - 2 * P);
-  const area = `${P},${H - P} ${pts} ${lastX},${H - P}`;
+  const lastX = data.length > 0 ? P + ((data.length - 1) / (len - 1)) * (W - 2 * P) : P;
+  const area = data.length > 0 ? `${P},${H - P} ${pts} ${lastX},${H - P}` : "";
 
   return (
     <div className="sys-spark-wrap" style={{ marginTop: '12px', marginBottom: '8px' }}>
