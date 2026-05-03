@@ -106,17 +106,12 @@ export default function SystemStats() {
       
       <div className="sys-bars">
         {rows.map(r => (
-          <div key={r.label} className="sys-row">
+          <div key={r.label} className="sys-row" title={r.detail}>
             <span className="sys-label">{r.label}</span>
             <div className="sys-bar"><div className={`sys-fill ${r.cls}`} style={{ width: `${r.pct}%` }} /></div>
             <span className="sys-pct">{Math.round(r.pct)}%</span>
           </div>
         ))}
-      </div>
-
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.65rem', color: 'var(--text-3)', marginTop: '6px', fontWeight: 500, fontVariantNumeric: 'tabular-nums' }}>
-        <span>RAM: {formatBytes(data.mem?.used || 0)} / {formatBytes(data.mem?.total || 0)}</span>
-        {disk && <span>Disk: {formatBytes(disk.used || 0)} / {formatBytes(disk.size || 0)}</span>}
       </div>
 
       <Spark data={history.cpu} />
