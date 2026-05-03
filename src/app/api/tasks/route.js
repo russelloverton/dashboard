@@ -12,6 +12,7 @@
 
 import { NextResponse } from 'next/server';
 import { getConfig } from '@/lib/config.server';
+import { gunzipSync } from 'zlib';
 
 export async function GET() {
   try {
@@ -34,22 +35,27 @@ export async function GET() {
     }
 
     const res = await fetch(url, { headers, next: { revalidate: 0 } });
+    if (!res.ok) throw new Error(`WebDAV returned ${res.status}`);
 
-    if (!res.ok) {
-      throw new Error(`WebDAV returned ${res.status}`);
+    const buffer = Buffer.from(await res.arrayBuffer());
+
+    let jsonText;
+    // SP prefixes compressed data with "pf_C2__" before the gzip bytes
+    if (buffer.slice(0, 7).toString() === 'pf_C2__') {
+      const compressed = buffer.slice(7);
+      jsonText = gunzipSync(compressed).toString('utf8');
+    } else {
+      jsonText = buffer.toString('utf8');
     }
 
-    const text = await res.text();
     let spData;
     try {
-      spData = JSON.parse(text);
+      spData = JSON.parse(jsonText);
     } catch {
       throw new Error('Super Productivity data is not valid JSON');
     }
 
-    // Extract tasks from SP's data structure
     const tasks = extractTasks(spData);
-
     return NextResponse.json({ tasks });
   } catch (err) {
     return NextResponse.json(
