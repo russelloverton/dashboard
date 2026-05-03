@@ -104,15 +104,19 @@ export default function SystemStats() {
         </div>
       </div>
       
-      <div className="sys-bars" style={{ display: 'grid', gridTemplateColumns: '32px 1fr 90px 32px', gap: '8px 10px', alignItems: 'center' }}>
+      <div className="sys-bars">
         {rows.map(r => (
-          <div key={r.label} className="sys-row" style={{ display: 'contents' }}>
-            <span className="sys-label" style={{ width: 'auto' }}>{r.label}</span>
+          <div key={r.label} className="sys-row">
+            <span className="sys-label">{r.label}</span>
             <div className="sys-bar"><div className={`sys-fill ${r.cls}`} style={{ width: `${r.pct}%` }} /></div>
-            <span style={{ fontSize: '0.6rem', color: 'var(--text-3)', textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{r.detail || ''}</span>
-            <span className="sys-pct" style={{ width: 'auto' }}>{Math.round(r.pct)}%</span>
+            <span className="sys-pct">{Math.round(r.pct)}%</span>
           </div>
         ))}
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.65rem', color: 'var(--text-3)', marginTop: '6px', fontWeight: 500, fontVariantNumeric: 'tabular-nums' }}>
+        <span>RAM: {formatBytes(data.mem?.used || 0)} / {formatBytes(data.mem?.total || 0)}</span>
+        {disk && <span>Disk: {formatBytes(disk.used || 0)} / {formatBytes(disk.size || 0)}</span>}
       </div>
 
       <Spark data={history.cpu} />
