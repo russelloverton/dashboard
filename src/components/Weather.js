@@ -31,19 +31,26 @@ export default function Weather() {
           if (data.city) {
             locName = `${data.city}${data.principalSubdivision ? `, ${data.principalSubdivision}` : ''}`;
           }
-        } catch(e) {
+        } catch (e) {
           console.error('Reverse geocoding failed', e);
         }
-        
+
         const newLoc = { name: locName, lat, lon };
         setLocation(newLoc);
         localStorage.setItem('weather_loc', JSON.stringify(newLoc));
       },
       (err) => {
         console.error('Geolocation failed', err);
+        let msg = err.message;
+        if (err.code === err.PERMISSION_DENIED) {
+          msg = "Permission was denied. Please check the permissions icon in your URL bar.";
+        } else if (err.code === err.POSITION_UNAVAILABLE) {
+          msg = "Position unavailable. Desktop browsers sometimes fail to triangulate Wi-Fi without GPS.";
+        }
+        alert(`Location error: ${msg}`);
         setLocation(null); // fallback to config
       },
-      { timeout: 10000, enableHighAccuracy: true }
+      { timeout: 10000, maximumAge: 60000, enableHighAccuracy: true }
     );
     setIsEditingLoc(false);
   };
@@ -57,14 +64,14 @@ export default function Weather() {
       } else {
         setLocation(null); // Do not auto-track GPS. Fallback to config.yaml
       }
-    } catch(e){}
+    } catch (e) { }
   }, []);
 
   const lat = location?.lat || '';
   const lon = location?.lon || '';
   // Wait to fetch weather until location state is definitively set (not undefined)
   const queryUrl = location === undefined ? null : ((lat && lon) ? `/api/weather?lat=${lat}&lon=${lon}` : '/api/weather');
-  
+
   const { data, error, loading } = usePolling(queryUrl, 15 * 60 * 1000);
   const unit = config?.weather?.units || 'fahrenheit';
   const format24 = config?.dashboard?.clock_format === 24;
@@ -81,15 +88,15 @@ export default function Weather() {
       const geo = await res.json();
       if (geo.results?.[0]) {
         const result = geo.results[0];
-        const newLoc = { 
+        const newLoc = {
           name: `${result.name}${result.admin1 ? `, ${result.admin1}` : ''}`,
           lat: result.latitude,
-          lon: result.longitude 
+          lon: result.longitude
         };
         setLocation(newLoc);
         localStorage.setItem('weather_loc', JSON.stringify(newLoc));
       }
-    } catch(e) {
+    } catch (e) {
       console.error('Geocoding failed', e);
     }
     setIsEditingLoc(false);
@@ -182,11 +189,11 @@ function TodayChart({ minutely_15, daily, selectedDay, setSelectedDay, unit, for
     if (!minutely_15?.time) return null;
     const targetDate = new Date(activeDate);
     targetDate.setHours(0, 0, 0, 0);
-    
+
     let start = minutely_15.time.findIndex(t => new Date(t) >= targetDate);
     if (start === -1) start = 0;
     const end = Math.min(start + 96, minutely_15.time.length); // 24 hours * 4
-    
+
     return {
       times: minutely_15.time.slice(start, end),
       temps: minutely_15.temperature_2m.slice(start, end),
@@ -275,7 +282,7 @@ function TodayChart({ minutely_15, daily, selectedDay, setSelectedDay, unit, for
   };
 
   const disablePrev = isToday();
-  const disableNext = daily?.time && activeDate >= new Date(daily.time[daily.time.length - 1].split('-')[0], daily.time[daily.time.length - 1].split('-')[1]-1, daily.time[daily.time.length - 1].split('-')[2]);
+  const disableNext = daily?.time && activeDate >= new Date(daily.time[daily.time.length - 1].split('-')[0], daily.time[daily.time.length - 1].split('-')[1] - 1, daily.time[daily.time.length - 1].split('-')[2]);
 
   let dayLabel = "Today";
   if (!isToday()) {
@@ -365,26 +372,26 @@ function TodayChart({ minutely_15, daily, selectedDay, setSelectedDay, unit, for
 
         {/* Invisible Hit Zones */}
         {temps.map((t, i) => (
-          <rect 
-            key={`hit-${i}`} 
-            x={xOf(i) - (plotW / temps.length) / 2} 
-            y={0} 
-            width={plotW / temps.length} 
-            height={H} 
-            fill="transparent" 
+          <rect
+            key={`hit-${i}`}
+            x={xOf(i) - (plotW / temps.length) / 2}
+            y={0}
+            width={plotW / temps.length}
+            height={H}
+            fill="transparent"
             onMouseEnter={() => setHoverIndex(i)}
             style={{ cursor: 'crosshair' }}
           />
         ))}
       </svg>
-      
+
       {/* HTML Tooltip Overlay */}
       {hoverIndex !== null && (
-        <div 
-          className="wh-tooltip" 
-          style={{ 
-            left: `${(xOf(hoverIndex) / W) * 100}%`, 
-            top: `${(yOf(temps[hoverIndex]) / H) * 100}%` 
+        <div
+          className="wh-tooltip"
+          style={{
+            left: `${(xOf(hoverIndex) / W) * 100}%`,
+            top: `${(yOf(temps[hoverIndex]) / H) * 100}%`
           }}
         >
           <div className="wht-time">{fmtTime(times[hoverIndex], true)}</div>

@@ -11,7 +11,10 @@ export default function Clock() {
   const config = useConfig();
   const [time, setTime] = useState(new Date());
 
+  const [mounted, setMounted] = useState(false);
+
   useEffect(() => {
+    setMounted(true);
     const timer = setInterval(() => setTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
@@ -40,13 +43,17 @@ export default function Clock() {
 
   return (
     <div className="header-clock" id="widget-clock">
-      <span className="header-clock-time">
-        {timeStr}
-        <span className="header-clock-sec">:{s}</span>
-        {period && <span className="header-clock-period">{period}</span>}
-      </span>
-      <span className="header-clock-divider">·</span>
-      <span className="header-clock-date">{dateStr}</span>
+      {mounted && (
+        <>
+          <span className="header-clock-time">
+            {timeStr}
+            <span className="header-clock-sec">:{s}</span>
+            {period && <span className="header-clock-period">{period}</span>}
+          </span>
+          <span className="header-clock-divider">·</span>
+          <span className="header-clock-date">{dateStr}</span>
+        </>
+      )}
     </div>
   );
 }
