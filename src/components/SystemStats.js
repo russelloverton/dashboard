@@ -12,9 +12,9 @@ export default function SystemStats() {
 
   const fetchAll = useCallback(async () => {
     try {
-      const endpoints = ['cpu', 'mem', 'fs', 'sensors', 'network', 'load', 'uptime'];
+      const endpoints = ['cpu', 'mem', 'fs', 'sensors', 'network', 'load', 'uptime', 'gpu'];
       const responses = await Promise.all(endpoints.map(ep => fetch(`/api/glances/${ep}`)));
-      const [cpu, mem, fs, sensors, network, load, uptime] = await Promise.all(responses.map(r => r.json()));
+      const [cpu, mem, fs, sensors, network, load, uptime, gpu] = await Promise.all(responses.map(r => r.json()));
       
       if (!mountedRef.current) return;
       
@@ -22,7 +22,7 @@ export default function SystemStats() {
         throw new Error(cpu.detail || mem.detail || 'Glances unavailable');
       }
 
-      setData({ cpu, mem, fs, sensors, network, load, uptime });
+      setData({ cpu, mem, fs, sensors, network, load, uptime, gpu });
       setHistory(prev => ({
         cpu: [...prev.cpu.slice(-59), cpu.total || 0],
         mem: [...prev.mem.slice(-59), mem.percent || 0]
@@ -77,6 +77,16 @@ export default function SystemStats() {
     { label: 'CPU', pct: data.cpu?.total || 0, cls: 'bar-cpu', spark: history.cpu },
     { label: 'RAM', pct: data.mem?.percent || 0, cls: 'bar-ram', detail: `${formatBytes(data.mem?.used || 0)} / ${formatBytes(data.mem?.total || 0)}` },
   ];
+  
+  if (Array.isArray(data.gpu) && data.gpu.length > 0) {
+    data.gpu.forEach((g, i) => {
+      // Different GPU plugins use different keys, but generally `proc` or `gpu_id` 
+      if (g.proc !== undefined) {
+        rows.push({ label: `GPU${data.gpu.length > 1 ? i : ''}`, pct: g.proc, cls: 'bar-gpu' });
+      }
+    });
+  }
+
   if (disk) rows.push({ label: 'Disk', pct: disk.percent || 0, cls: 'bar-disk', detail: `${formatBytes(disk.used || 0)} / ${formatBytes(disk.size || 0)}` });
 
   return (

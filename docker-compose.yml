@@ -19,10 +19,13 @@ services:
   # Provides CPU, RAM, disk, and sensor data
   # ============================================
   glances:
-    image: nicolargo/glances:latest
+    image: nicolargo/glances:latest-full
     container_name: glances
     restart: unless-stopped
     pid: host
+    privileged: true # Grants access to /sys/class/hwmon for AMD sensors
+    devices:
+      - /dev/dri:/dev/dri # Passes the Radeon 780M iGPU into the container
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /etc/os-release:/etc/os-release:ro
