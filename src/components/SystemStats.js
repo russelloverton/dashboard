@@ -124,27 +124,37 @@ export default function SystemStats() {
 }
 
 function Spark({ data }) {
-  const W = 180, H = 28, P = 1;
+  const W = 180, H = 36, P = 2;
   const mn = 0, mx = 100;
+  
+  // Ensure we have exactly 60 data points (or whatever the array length is)
+  const len = Math.max(data.length, 2);
   const pts = data.map((v, i) => {
-    const x = P + (i / (data.length - 1)) * (W - 2 * P);
+    const x = P + (i / (len - 1)) * (W - 2 * P);
     const y = H - P - ((v - mn) / (mx - mn)) * (H - 2 * P);
     return `${x},${y}`;
   }).join(' ');
-  const area = `${P},${H} ${pts} ${P + ((data.length - 1) / (data.length - 1)) * (W - 2 * P)},${H}`;
+  
+  const lastX = P + ((data.length - 1) / (len - 1)) * (W - 2 * P);
+  const area = `${P},${H - P} ${pts} ${lastX},${H - P}`;
+
   return (
     <div className="sys-spark-wrap" style={{ marginTop: '12px', marginBottom: '8px' }}>
       <div style={{ fontSize: '9px', textTransform: 'uppercase', color: 'var(--text-3)', letterSpacing: '0.05em', marginBottom: '6px' }}>CPU History (60s)</div>
-      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="spark" style={{ overflow: 'visible' }}>
+      <svg viewBox={`0 0 ${W + 24} ${H}`} className="spark" style={{ overflow: 'visible', width: '100%', height: 'auto', display: 'block' }}>
+        {/* Grid lines */}
         <line x1="0" x2={W} y1={P} y2={P} stroke="var(--border)" strokeWidth="0.5" strokeDasharray="2 2" />
         <line x1="0" x2={W} y1={H/2} y2={H/2} stroke="var(--border)" strokeWidth="0.5" strokeDasharray="2 2" />
         <line x1="0" x2={W} y1={H-P} y2={H-P} stroke="var(--border)" strokeWidth="0.5" strokeDasharray="2 2" />
         
-        <text x={W + 4} y="5" fontSize="7.5" fill="var(--text-3)">100%</text>
-        <text x={W + 4} y={H} fontSize="7.5" fill="var(--text-3)">0%</text>
+        {/* Labels perfectly centered on their respective lines */}
+        <text x={W + 4} y={P} fontSize="7.5" fill="var(--text-3)" dominantBaseline="central">100%</text>
+        <text x={W + 4} y={H/2} fontSize="7.5" fill="var(--text-3)" dominantBaseline="central">50%</text>
+        <text x={W + 4} y={H-P} fontSize="7.5" fill="var(--text-3)" dominantBaseline="central">0%</text>
 
+        {/* Data area and line */}
         <polygon points={area} fill="var(--accent)" opacity="0.08" />
-        <polyline points={pts} fill="none" stroke="var(--accent)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" opacity="0.6" />
+        <polyline points={pts} fill="none" stroke="var(--accent)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" opacity="0.8" />
       </svg>
     </div>
   );
