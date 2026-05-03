@@ -109,7 +109,7 @@ export default function SystemStats() {
           <div key={r.label} className="sys-row" title={r.detail}>
             <span className="sys-label">{r.label}</span>
             <div className="sys-bar"><div className={`sys-fill ${r.cls}`} style={{ width: `${r.pct}%` }} /></div>
-            <span className="sys-pct">{Math.round(r.pct)}%</span>
+            <span className="sys-pct" style={{ minWidth: '36px', textAlign: 'right' }}>{Math.round(r.pct)}%</span>
           </div>
         ))}
       </div>
