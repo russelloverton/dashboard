@@ -17,6 +17,10 @@ export function usePolling(url, interval = 0) {
   const mountedRef = useRef(true);
 
   const fetchData = useCallback(async () => {
+    if (!url) {
+      if (mountedRef.current) setLoading(false);
+      return;
+    }
     try {
       const res = await fetch(url);
       if (!res.ok) {

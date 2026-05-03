@@ -82,9 +82,6 @@ services:
     # External Cloudflare Tunnel URL — used for browser links
     external_url: "https://tasks.squidball.xyz"
 
-  homepage:
-    # Internal Docker hostname
-    internal_url: "http://homepage:3000"
 
   notesnook:
     # Internal Docker hostname

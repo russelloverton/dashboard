@@ -51,7 +51,6 @@ export async function GET() {
       { name: 'Local AI', url: s.open_webui?.internal_url },
       { name: 'Nextcloud', url: s.nextcloud?.internal_url },
       { name: 'Stirling PDF', url: s.stirling?.internal_url },
-      { name: 'Homepage', url: s.homepage?.internal_url },
     ].filter(c => c.url);
 
     const results = await Promise.all(

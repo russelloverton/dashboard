@@ -124,8 +124,8 @@ export default function SystemStats() {
 }
 
 function Spark({ data }) {
-  const W = 180, H = 24, P = 1;
-  const mn = Math.min(...data) * 0.9, mx = Math.max(...data) * 1.1 || 100;
+  const W = 180, H = 28, P = 1;
+  const mn = 0, mx = 100;
   const pts = data.map((v, i) => {
     const x = P + (i / (data.length - 1)) * (W - 2 * P);
     const y = H - P - ((v - mn) / (mx - mn)) * (H - 2 * P);
@@ -133,9 +133,19 @@ function Spark({ data }) {
   }).join(' ');
   const area = `${P},${H} ${pts} ${P + ((data.length - 1) / (data.length - 1)) * (W - 2 * P)},${H}`;
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="spark">
-      <polygon points={area} fill="var(--accent)" opacity="0.08" />
-      <polyline points={pts} fill="none" stroke="var(--accent)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" opacity="0.5" />
-    </svg>
+    <div className="sys-spark-wrap" style={{ marginTop: '12px', marginBottom: '8px' }}>
+      <div style={{ fontSize: '9px', textTransform: 'uppercase', color: 'var(--text-3)', letterSpacing: '0.05em', marginBottom: '6px' }}>CPU History (60s)</div>
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="spark" style={{ overflow: 'visible' }}>
+        <line x1="0" x2={W} y1={P} y2={P} stroke="var(--border)" strokeWidth="0.5" strokeDasharray="2 2" />
+        <line x1="0" x2={W} y1={H/2} y2={H/2} stroke="var(--border)" strokeWidth="0.5" strokeDasharray="2 2" />
+        <line x1="0" x2={W} y1={H-P} y2={H-P} stroke="var(--border)" strokeWidth="0.5" strokeDasharray="2 2" />
+        
+        <text x={W + 4} y="5" fontSize="7.5" fill="var(--text-3)">100%</text>
+        <text x={W + 4} y={H} fontSize="7.5" fill="var(--text-3)">0%</text>
+
+        <polygon points={area} fill="var(--accent)" opacity="0.08" />
+        <polyline points={pts} fill="none" stroke="var(--accent)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" opacity="0.6" />
+      </svg>
+    </div>
   );
 }

@@ -3,28 +3,67 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { usePolling } from '@/hooks/usePolling';
 import { useConfig } from '@/hooks/useConfig';
-import { WeatherIcon, IconDroplet, IconWind, IconSearch } from '@/lib/icons';
+import { WeatherIcon, IconDroplet, IconWind, IconSearch, IconMapPin, IconChevronLeft, IconChevronRight } from '@/lib/icons';
 import { weatherCodeToText, formatTemp } from '@/lib/utils';
 
 export default function Weather() {
   const config = useConfig();
   const [tab, setTab] = useState('today');
   const [selectedDay, setSelectedDay] = useState(null);
-  const [location, setLocation] = useState(null); // { name, lat, lon }
+  const [location, setLocation] = useState(undefined); // undefined = loading, null = failed/no location
   const [isEditingLoc, setIsEditingLoc] = useState(false);
   const searchRef = useRef(null);
 
-  // Load saved location on mount
+  const fetchDeviceLocation = () => {
+    if (!navigator.geolocation) {
+      alert('Geolocation is not supported by your browser.');
+      setLocation(null);
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const lat = pos.coords.latitude;
+        const lon = pos.coords.longitude;
+        let locName = 'Current Location';
+        try {
+          const res = await fetch(`/api/weather/reverse?lat=${lat}&lon=${lon}`);
+          const data = await res.json();
+          if (data.city) {
+            locName = `${data.city}${data.principalSubdivision ? `, ${data.principalSubdivision}` : ''}`;
+          }
+        } catch(e) {
+          console.error('Reverse geocoding failed', e);
+        }
+        
+        const newLoc = { name: locName, lat, lon };
+        setLocation(newLoc);
+        localStorage.setItem('weather_loc', JSON.stringify(newLoc));
+      },
+      (err) => {
+        console.error('Geolocation failed', err);
+        setLocation(null); // fallback to config
+      },
+      { timeout: 10000, enableHighAccuracy: true }
+    );
+    setIsEditingLoc(false);
+  };
+
+  // Load saved location on mount or default to config
   useEffect(() => {
     try {
       const saved = localStorage.getItem('weather_loc');
-      if (saved) setLocation(JSON.parse(saved));
+      if (saved) {
+        setLocation(JSON.parse(saved));
+      } else {
+        setLocation(null); // Do not auto-track GPS. Fallback to config.yaml
+      }
     } catch(e){}
   }, []);
 
   const lat = location?.lat || '';
   const lon = location?.lon || '';
-  const queryUrl = (lat && lon) ? `/api/weather?lat=${lat}&lon=${lon}` : '/api/weather';
+  // Wait to fetch weather until location state is definitively set (not undefined)
+  const queryUrl = location === undefined ? null : ((lat && lon) ? `/api/weather?lat=${lat}&lon=${lon}` : '/api/weather');
   
   const { data, error, loading } = usePolling(queryUrl, 15 * 60 * 1000);
   const unit = config?.weather?.units || 'fahrenheit';
@@ -56,6 +95,14 @@ export default function Weather() {
     setIsEditingLoc(false);
   };
 
+  if (location === undefined) {
+    return (
+      <div className="weather-hero">
+        <div className="weather-hero-placeholder">Locating…</div>
+      </div>
+    );
+  }
+
   if ((loading && !data) || (error && !data)) {
     return (
       <div className="weather-hero">
@@ -77,12 +124,17 @@ export default function Weather() {
           <WeatherIcon code={current?.weather_code} size={38} className="wh-icon" />
           <div className="wh-temp-col">
             {isEditingLoc ? (
-              <form onSubmit={handleSearch} className="wh-loc-form">
+              <form onSubmit={handleSearch} className="wh-loc-form" style={{ display: 'flex', alignItems: 'center' }}>
                 <IconSearch size={10} className="wh-loc-icon" />
-                <input ref={searchRef} type="text" className="wh-loc-input" placeholder="City or Zip..." autoFocus onBlur={() => setTimeout(() => setIsEditingLoc(false), 150)} />
+                <input ref={searchRef} type="text" className="wh-loc-input" placeholder="City or Zip..." autoFocus onBlur={() => setTimeout(() => setIsEditingLoc(false), 200)} />
               </form>
             ) : (
-              <span className="wh-location" onClick={() => setIsEditingLoc(true)} title="Click to change location">{displayName}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span className="wh-location" onClick={() => setIsEditingLoc(true)} title="Click to change location">{displayName}</span>
+                <button type="button" onClick={(e) => { e.preventDefault(); fetchDeviceLocation(); }} title="Auto-Locate via GPS" style={{ background: 'var(--bg-panel)', border: '1px solid var(--border)', borderRadius: '4px', color: 'var(--text-2)', cursor: 'pointer', padding: '2px 4px', display: 'flex', alignItems: 'center', transition: 'all 0.15s' }}>
+                  <IconMapPin size={10} />
+                </button>
+              </div>
             )}
             <span className="wh-temp">{formatTemp(current?.temperature_2m, unit)}</span>
           </div>
@@ -107,7 +159,7 @@ export default function Weather() {
 
       {/* Tab content */}
       {tab === 'today'
-        ? <TodayChart minutely_15={minutely_15} selectedDay={selectedDay} unit={unit} format24={format24} />
+        ? <TodayChart minutely_15={minutely_15} daily={daily} selectedDay={selectedDay} setSelectedDay={setSelectedDay} unit={unit} format24={format24} />
         : <WeekList daily={daily} unit={unit} onSelectDay={(d) => { setSelectedDay(d); setTab('today'); }} />
       }
     </div>
@@ -115,36 +167,32 @@ export default function Weather() {
 }
 
 /* ── Today: dual-axis line chart (temp line + precip bars) ── */
-function TodayChart({ minutely_15, selectedDay, unit, format24 }) {
+function TodayChart({ minutely_15, daily, selectedDay, setSelectedDay, unit, format24 }) {
   const [hoverIndex, setHoverIndex] = useState(null);
+
+  const activeDate = useMemo(() => {
+    if (selectedDay) {
+      const parts = selectedDay.split('-');
+      return new Date(parts[0], parts[1] - 1, parts[2]);
+    }
+    return new Date();
+  }, [selectedDay]);
 
   const chartData = useMemo(() => {
     if (!minutely_15?.time) return null;
-    const now = new Date();
-    let start, end;
+    const targetDate = new Date(activeDate);
+    targetDate.setHours(0, 0, 0, 0);
     
-    if (selectedDay) {
-      // Find start of selected day
-      const targetDate = new Date(selectedDay);
-      targetDate.setHours(0, 0, 0, 0);
-      start = minutely_15.time.findIndex(t => new Date(t) >= targetDate);
-      if (start === -1) start = 0;
-      end = Math.min(start + 96, minutely_15.time.length); // 24 hours * 4
-    } else {
-      // Live 'today' view
-      start = minutely_15.time.findIndex(t => new Date(t) >= now);
-      if (start === -1) start = 0;
-      if (start >= 2) start -= 2; // start 30 minutes before now
-      else if (start === 1) start -= 1;
-      end = Math.min(start + 72, minutely_15.time.length); // 18 hours * 4
-    }
-
+    let start = minutely_15.time.findIndex(t => new Date(t) >= targetDate);
+    if (start === -1) start = 0;
+    const end = Math.min(start + 96, minutely_15.time.length); // 24 hours * 4
+    
     return {
       times: minutely_15.time.slice(start, end),
       temps: minutely_15.temperature_2m.slice(start, end),
       precips: minutely_15.precipitation_probability.slice(start, end),
     };
-  }, [minutely_15, selectedDay]);
+  }, [minutely_15, activeDate]);
 
   if (!chartData || chartData.temps.length < 3) return null;
 
@@ -208,8 +256,62 @@ function TodayChart({ minutely_15, selectedDay, unit, format24 }) {
     }
   }
 
+  // --- Navigation & "Now" Logic ---
+  const handlePrev = () => {
+    const d = new Date(activeDate);
+    d.setDate(d.getDate() - 1);
+    setSelectedDay(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
+  };
+
+  const handleNext = () => {
+    const d = new Date(activeDate);
+    d.setDate(d.getDate() + 1);
+    setSelectedDay(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
+  };
+
+  const isToday = () => {
+    const today = new Date();
+    return activeDate.getDate() === today.getDate() && activeDate.getMonth() === today.getMonth();
+  };
+
+  const disablePrev = isToday();
+  const disableNext = daily?.time && activeDate >= new Date(daily.time[daily.time.length - 1].split('-')[0], daily.time[daily.time.length - 1].split('-')[1]-1, daily.time[daily.time.length - 1].split('-')[2]);
+
+  let dayLabel = "Today";
+  if (!isToday()) {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    if (activeDate.getDate() === tomorrow.getDate() && activeDate.getMonth() === tomorrow.getMonth()) {
+      dayLabel = "Tomorrow";
+    } else {
+      dayLabel = activeDate.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
+    }
+  }
+
+  // Find exact current time pixel on X-axis for "Now" indicator
+  let nowX = null;
+  if (isToday() && times.length > 0) {
+    const nowMs = new Date().getTime();
+    const startMs = new Date(times[0]).getTime();
+    const endMs = new Date(times[times.length - 1]).getTime();
+    if (nowMs >= startMs && nowMs <= endMs) {
+      nowX = PAD.l + ((nowMs - startMs) / (endMs - startMs)) * plotW;
+    }
+  }
+
   return (
     <div className="wh-chart" style={{ position: 'relative' }}>
+      {/* Navigation Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 12px', marginBottom: '8px' }}>
+        <button onClick={handlePrev} disabled={disablePrev} style={{ background: 'transparent', border: 'none', color: disablePrev ? 'var(--text-3)' : 'var(--text-2)', cursor: disablePrev ? 'default' : 'pointer', opacity: disablePrev ? 0.3 : 1 }}>
+          <IconChevronLeft size={14} />
+        </button>
+        <span style={{ fontSize: '11px', fontWeight: 500, color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{dayLabel}</span>
+        <button onClick={handleNext} disabled={disableNext} style={{ background: 'transparent', border: 'none', color: disableNext ? 'var(--text-3)' : 'var(--text-2)', cursor: disableNext ? 'default' : 'pointer', opacity: disableNext ? 0.3 : 1 }}>
+          <IconChevronRight size={14} />
+        </button>
+      </div>
+
       <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet" className="wh-svg" onMouseLeave={() => setHoverIndex(null)}>
         <defs>
           <linearGradient id="areaFill" x1="0" y1="0" x2="0" y2="1">
@@ -241,6 +343,11 @@ function TodayChart({ minutely_15, selectedDay, unit, format24 }) {
         {/* Area + smooth line */}
         <path d={areaD} fill="url(#areaFill)" />
         <path d={lineD} fill="none" stroke="var(--chart-line)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+
+        {/* "Now" Indicator */}
+        {nowX && (
+          <line x1={nowX} x2={nowX} y1={PAD.t} y2={PAD.t + plotH} stroke="var(--chart-line)" strokeWidth="1.5" strokeDasharray="3 3" opacity="0.6" />
+        )}
 
         {/* X-Axis Time Labels - Show every 8th point (every 2 hours) */}
         {temps.map((t, i) => {
